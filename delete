@@ -1,0 +1,82 @@
+import requests
+import json
+
+def get_repos_from_git_api(username, token):
+    url = f"https://api.github.com/users/{username}/repos"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to fetch repos: {response.status_code}, {response.text}")
+
+def delete_jenkinsfile(username, repo_name, branch_name, token):
+    # Get the Jenkinsfile's SHA
+    url = f"https://api.github.com/repos/{username}/{repo_name}/contents/Jenkinsfile?ref={branch_name}"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        file_info = response.json()
+        sha = file_info['sha']
+
+        # Delete the Jenkinsfile
+        delete_url = f"https://api.github.com/repos/{username}/{repo_name}/contents/Jenkinsfile"
+        delete_data = {
+            "message": f"Deleting Jenkinsfile from branch {branch_name}",
+            "branch": branch_name,
+            "sha": sha
+        }
+        delete_response = requests.delete(delete_url, headers=headers, json=delete_data)
+
+        if delete_response.status_code == 200:
+            print(f"Deleted Jenkinsfile from {repo_name}/{branch_name}")
+        else:
+            print(f"Failed to delete Jenkinsfile from {repo_name}/{branch_name}: {delete_response.status_code}, {delete_response.text}")
+    else:
+        print(f"Failed to fetch Jenkinsfile SHA for {repo_name}/{branch_name}: {response.status_code}, {response.text}")
+
+def check_and_delete_jenkinsfile(username, token):
+    repos = get_repos_from_git_api(username, token)
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    for repo in repos:
+        repo_name = repo['name']
+        branches_url = repo['branches_url'].replace("{/branch}", "")
+        branches_response = requests.get(branches_url, headers=headers)
+
+        if branches_response.status_code == 200:
+            branches = branches_response.json()
+            for branch in branches:
+                branch_name = branch['name']
+                jenkinsfile_url = f"https://api.github.com/repos/{username}/{repo_name}/contents/Jenkinsfile?ref={branch_name}"
+                jenkinsfile_response = requests.get(jenkinsfile_url, headers=headers)
+
+                if jenkinsfile_response.status_code == 200:
+                    print(f"Jenkinsfile found in {repo_name}/{branch_name}")
+                    delete_jenkinsfile(username, repo_name, branch_name, token)
+                else:
+                    print(f"No Jenkinsfile found in {repo_name}/{branch_name}")
+        else:
+            print(f"Failed to fetch branches for repo {repo_name}: {branches_response.status_code}")
+
+if __name__ == "__main__":
+    # Replace with your GitHub username and personal access token
+    username = "username_here"
+    token = "your_personal_access_token_here"
+
+    try:
+        # Check and delete Jenkinsfile in all repos and branches
+        check_and_delete_jenkinsfile(username, token)
+    except Exception as e:
+        print(e)
